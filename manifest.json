@@ -1,0 +1,8 @@
+{
+  "name": "COC Twi Hymnal",
+  "short_name": "COC Hymnal",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f3f7f8",
+  "theme_color": "#075c70"
+}
