@@ -1,81 +1,102 @@
-const CACHE = "coc-twi-hymnal-v3";
+const CACHE_NAME = "coc-twi-hymnal-v3";
 
-const FILES = [
+const APP_FILES = [
   "./",
   "./index.html",
   "./manifest.json"
 ];
 
-for (let i = 1; i <= 80; i++) {
-  FILES.push("./hymn" + String(i).padStart(3, "0") + ".txt");
-}
+const HYMN_FILES = Array.from(
+  { length: 80 },
+  (_, i) => "./hymn" + String(i + 1).padStart(3, "0") + ".txt"
+);
 
 self.addEventListener("install", event => {
-  event.waitUntil((async () => {
-    const cache = await caches.open(CACHE);
+  event.waitUntil(
+    (async () => {
+      const cache = await caches.open(CACHE_NAME);
 
-    await cache.addAll([
-      "./",
-      "./index.html",
-      "./manifest.json"
-    ]);
+      // Save the main app files.
+      await cache.addAll(APP_FILES);
 
-    await Promise.all(
-      FILES.slice(3).map(async file => {
-        try {
-          const response = await fetch(file);
+      // Save the hymns that are available.
+      await Promise.all(
+        HYMN_FILES.map(async file => {
+          try {
+            const response = await fetch(file);
 
-          if (response.ok) {
-            await cache.put(file, response);
+            if (response.ok) {
+              await cache.put(file, response);
+            }
+          } catch (error) {
+            // Continue if a hymn cannot be downloaded.
           }
-        } catch (error) {
-          // Continue if an individual hymn file is unavailable.
-        }
-      })
-    );
-  })());
+        })
+      );
 
-  self.skipWaiting();
+      await self.skipWaiting();
+    })()
+  );
 });
 
 self.addEventListener("activate", event => {
   event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(
+    (async () => {
+      const keys = await caches.keys();
+
+      await Promise.all(
         keys
           .filter(key =>
             key.startsWith("coc-twi-hymnal-") &&
-            key !== CACHE
+            key !== CACHE_NAME
           )
           .map(key => caches.delete(key))
-      )
-    )
-  );
+      );
 
-  self.clients.claim();
+      await self.clients.claim();
+    })()
+  );
 });
 
 self.addEventListener("fetch", event => {
   if (event.request.method !== "GET") return;
 
   event.respondWith(
-    caches.match(event.request).then(cachedResponse => {
-      if (cachedResponse) return cachedResponse;
+    (async () => {
+      const cached = await caches.match(event.request);
 
-      return fetch(event.request).then(response => {
+      if (cached) return cached;
+
+      try {
+        const response = await fetch(event.request);
+
         if (
           response.ok &&
-          new URL(event.request.url).origin === self.location.origin
+          new URL(event.request.url).origin ===
+            self.location.origin
         ) {
-          const copy = response.clone();
-
-          caches.open(CACHE).then(cache =>
-            cache.put(event.request, copy)
-          );
+          const cache = await caches.open(CACHE_NAME);
+          await cache.put(event.request, response.clone());
         }
 
         return response;
-      }).catch(() => caches.match("./index.html"));
-    })
+      } catch (error) {
+        if (event.request.mode === "navigate") {
+          const home = await caches.match("./index.html");
+
+          if (home) return home;
+        }
+
+        return new Response(
+          "This file is not available offline yet. Connect to the internet and open the hymnal again.",
+          {
+            status: 503,
+            headers: {
+              "Content-Type": "text/plain; charset=utf-8"
+            }
+          }
+        );
+      }
+    })()
   );
 });
